@@ -1,5 +1,6 @@
 <?php
-  const APPID = '1bc9a24fd3dbe20b6e649c15f2f0043e';
+  const KEY = '23ab52e97ffed34b5f13dcf466d168cd';
+  const URL = 'http://api.openweathermap.org/data/2.5/forecast';
 
 
   function request ($city) {
@@ -9,27 +10,22 @@
 
     $args = [
       'q' => $city,
-      'APPID' => APPID,
+      'APPID' => KEY,
       'units' => 'metric',
       'lang' => 'ru'
     ];
 
-    $result = @file_get_contents('http://api.openweathermap.org/data/2.5/forecast?'.http_build_query($args));
+    $result = @file_get_contents(URL.'?'.http_build_query($args));
 
     if ($result === FALSE) {
       throw new Exception("Not found");
     }
 
-    return json_decode($result, true);
-  }
+    $data = json_decode($result, true);
 
-
-  function transform ($data) {
     $city = [
       id => $data[city][id],
-      name => $data[city][name],
-      lat => $data[city][coord][lat],
-      lon => $data[city][coord][lon]
+      name => $data[city][name]
     ];
 
     $weather = [];
@@ -40,9 +36,9 @@
         pressure => $forecast[main][pressure],
         humidity => $forecast[main][humidity],
         description => $forecast[weather][0][description],
-        icon => $forecast[weather][0][icon],
         clouds => $forecast[clouds][all],
-        wind_speed => $forecast[wind][speed]
+        wind_speed => $forecast[wind][speed],
+        wind_deg => $forecast[wind][deg]
       ];
     }
 
@@ -50,90 +46,66 @@
   }
 
 
-  function findCity($db, $name) {
-  	$cityStmt = $db->prepare("
+  function getForecast ($city) {
+    $db = new mysqli('localhost:3306', 'root', '', 'weatherDB');
+
+    if (mysqli_connect_errno()) {
+      printf("Ошибка подключения: %s\n", mysqli_connect_error());
+      exit();
+    }
+
+    $cityTable = $db->prepare("
       SELECT *
       FROM city
       WHERE LOWER(name) LIKE LOWER(?)
       LIMIT 1");
 
-    $query = '%'.$name.'%';
-    $cityStmt->bind_param('s', $query);
-    $cityStmt->execute();
+    $query = '%'.$city.'%';
+    $cityTable->bind_param('s', $query);
+    $cityTable->execute();
 
-    $res = $cityStmt->get_result();
+    $res = $cityTable->get_result();
     $fromDB = $res->num_rows !== 0;
-
-    $cityData = [];
+    
     if ($fromDB) {
       $res->data_seek(0);
       $cityData = $res->fetch_assoc();
-  	}
 
-  	return [$fromDB, $cityData];
-  }
+      $weatherTable = $db->prepare("
+        SELECT dt, temp, pressure, humidity, description, clouds, wind_speed, wind_deg
+        FROM weather
+        WHERE city_id = ?");
 
+      $weatherTable->bind_param('i', $cityData[id]);
+      $weatherTable->execute();
+      $res = $weatherTable->get_result();
 
-  function findWeather($db, $cityID) {
-  	$weatherStmt = $db->prepare("
-      SELECT dt, temp, pressure, humidity, description, icon, clouds, wind_speed
-      FROM weather
-      WHERE city_id = ?");
+      $weather = [];
+      while ($row = $res->fetch_assoc()) {
+        $weather[] = $row;
+      }
 
-    $weatherStmt->bind_param('i', $cityID);
-    $weatherStmt->execute();
-    $res = $weatherStmt->get_result();
-
-    $weather = [];
-    while ($row = $res->fetch_assoc()) {
-      $weather[] = $row;
-    }
-
-    $weatherStmt->close();
-
-    return $weather;
-  }
-
-
-  function updateCity($db, $cityData) {
-  	$updateStmt = $db->prepare("
-  	  INSERT INTO city (id, name, lat, lon)
-      VALUES (?, ?, ?, ?)");
-
-  	$updateStmt->bind_param('isdd', $cityData[id], $cityData[name], $cityData[lat], $cityData[lon]);
-    $updateStmt->execute();
-    $updateStmt->close();
-  }
-
-
-  function insertWeather($db, $cityID, $weather) {
-  	$query = "INSERT INTO weather (city_id, dt, temp, pressure, humidity, description, icon, clouds, wind_speed) VALUES";
-    foreach ($weather as $w) {
-      $query .= " ('".$cityID."', '".implode("', '", $w)."'),";
-    }
-    $query = trim($query, ",");
-    $db->query($query);
-  }
-
-
-  function getForecast ($city) {
-    $db = new mysqli('localhost:3306', 'root', '', 'forecast');
-
-    if (mysqli_connect_errno()) {
-      printf("Подключение невозможно: %s\n", mysqli_connect_error());
-      exit();
-    }
-
-    list($fromDB, $cityData) = findCity($db, $city);
-
-    if ($fromDB) {
-      $weather = findWeather($db, $cityData[id]);
+      $weatherTable->close();
     } else {
-      $weather = request($city);
-      list($cityData, $weather) = transform($weather);
-      updateCity($db, $cityData);
-      insertWeather($db, $cityData[id], $weather);
+      list($cityData, $weather) = request($city);
+
+      $updateCity = $db->prepare("
+        INSERT INTO city (id, name)
+        VALUES (?, ?)");
+
+      $updateCity->bind_param('is', $cityData[id], $cityData[name]);
+      $updateCity->execute();
+      $updateCity->close();
+
+      $query = "INSERT INTO weather (city_id, dt, temp, pressure, humidity, description, clouds, wind_speed, wind_deg) VALUES";
+      foreach ($weather as $forecast) {
+        $query .= " ('".$cityData[id]."', '".implode("', '", $forecast)."'),";
+      }
+      $query = trim($query, ",");
+      $insertWeather = $db->query($query);
     }
+
+    $cityTable->close();
 
     $db->close();
 
@@ -145,7 +117,7 @@
   if (isset($_GET['city']) && is_string($_GET['city'])) {
     $hasForecast = true;
     try {
-      list($cityInfo, $weather, $fromDB) = getForecast($_GET['city']);
+      list($city, $weather, $fromDB) = getForecast($_GET['city']);
     } catch (Exception $e) {
       $weather = "Не найдено";
     }
@@ -168,11 +140,11 @@
 
   <?php
     if ($hasForecast) {
-      print_r($cityInfo);
+      print_r($city);
       print_r($weather);
-      echo $fromDB ? "Из БД" : "Из API";
+      echo $fromDB ? "Погода из БД" : "Погода из API";
     } else {
-      echo "Введите город";
+      echo "Введите запрос (транслитом)";
     }
   ?>
 

@@ -3,43 +3,41 @@ SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL,ALLOW_INVALID_DATES';
 
 -- -----------------------------------------------------
--- Schema forecast
+-- Schema weatherDB
 -- -----------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS `forecast` DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci ;
-USE `forecast` ;
+CREATE SCHEMA IF NOT EXISTS `weatherDB` DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci ;
+USE `weatherDB` ;
 
 -- -----------------------------------------------------
--- Table `forecast`.`city`
+-- Table `weatherDB`.`city`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `forecast`.`city` (
+CREATE TABLE IF NOT EXISTS `weatherDB`.`city` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(45) NOT NULL,
-  `lat` DOUBLE NOT NULL,
-  `lon` DOUBLE NOT NULL,
   PRIMARY KEY (`id`),
   INDEX `name` (`name` ASC))
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `forecast`.`weather`
+-- Table `weatherDB`.`weather`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `forecast`.`weather` (
+CREATE TABLE IF NOT EXISTS `weatherDB`.`weather` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `dt` DATETIME NOT NULL,
   `city_id` INT NOT NULL,
   `temp` FLOAT NOT NULL,
   `pressure` FLOAT NOT NULL,
   `humidity` INT NOT NULL,
-  `description` VARCHAR(75) NOT NULL,
-  `icon` VARCHAR(3) NOT NULL,
+  `description` VARCHAR(100) NOT NULL,
   `clouds` INT NOT NULL,
-  `wind_speed` FLOAT NOT NULL
+  `wind_speed` FLOAT NOT NULL,
+  `wind_deg` FLOAT NOT NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_weather_city_idx` (`city_id` ASC),
   CONSTRAINT `fk_weather_city`
     FOREIGN KEY (`city_id`)
-    REFERENCES `forecast`.`city` (`id`)
+    REFERENCES `weatherDB`.`city` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
